@@ -10,7 +10,22 @@ const WHISPER_MODEL_ID = "openai/whisper:8099696689d249cf8b122d833c36ac3f75505c6
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    console.log('📡 收到转录请求');
+    console.log('📡 Content-Type:', req.headers.get('content-type'));
+    
+    // 尝试获取formData，添加错误处理
+    let formData;
+    try {
+      formData = await req.formData();
+    } catch (formError: any) {
+      console.error('❌ FormData解析失败:', formError);
+      return NextResponse.json({ 
+        error: '文件上传格式错误，请重新选择文件',
+        suggestion: '请确保选择的是有效的音频文件',
+        timestamp: new Date().toISOString()
+      }, { status: 400 });
+    }
+
     const file = formData.get('file') as File;
     const language = formData.get('language') as string;
 
