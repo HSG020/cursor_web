@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
           '🔑 要使用真实转录，请获取Replicate API Token：',
           '   1. 访问 https://replicate.com/account/api-tokens',
           '   2. 注册/登录账号并创建新的API Token',
-          '   3. 更新 .env.local 文件中的 REPLICATE_API_TOKEN',
-          '   4. 重启应用即可使用真实转录功能'
+          '   3. 在Vercel项目设置中添加环境变量 REPLICATE_API_TOKEN',
+          '   4. 重新部署即可使用真实转录功能'
         ]
       });
     }
@@ -82,6 +82,7 @@ export async function POST(req: NextRequest) {
     console.log('==== 转录请求开始 ====');
     console.log('文件信息:', { fileName: file.name, fileSize: file.size, fileType: file.type });
     console.log('语言设置:', language);
+    console.log('API Token状态:', REPLICATE_API_TOKEN ? `已配置 (${REPLICATE_API_TOKEN.substring(0, 8)}...)` : '未配置');
 
     // 检查文件大小并给出建议
     const fileSizeMB = file.size / (1024 * 1024);
@@ -89,12 +90,23 @@ export async function POST(req: NextRequest) {
     
     if (fileSizeMB > 20) {
       console.log('⚠️ 大文件警告: 文件较大，可能影响转录完整性');
-      console.log('建议: 使用音频压缩或分割文件以获得更好的效果');
     }
 
+    // 创建Replicate实例
+    let replicate;
+    try {
+      replicate = new Replicate({ auth: REPLICATE_API_TOKEN });
+    } catch (authError) {
+      console.error('❌ Replicate认证失败:', authError);
+      return NextResponse.json({ 
+        error: 'API认证失败，请检查REPLICATE_API_TOKEN是否正确配置',
+        needsApiToken: true
+      }, { status: 401 });
+    }
+
+    // 准备音频数据
     const arrayBuffer = await file.arrayBuffer();
     const base64Audio = Buffer.from(arrayBuffer).toString('base64');
-    const replicate = new Replicate({ auth: REPLICATE_API_TOKEN });
 
     // 根据OpenAI Whisper API格式构建输入参数
     const input: Record<string, any> = {
@@ -109,39 +121,66 @@ export async function POST(req: NextRequest) {
       console.log('✅ 使用自动检测');
     }
 
-    // 估算音频时长（粗略估算）
-    const estimatedDurationSeconds = file.size / (44100 * 2 * 2); // 假设44.1kHz, 16bit, stereo
-    console.log('估算音频时长:', estimatedDurationSeconds.toFixed(1), '秒');
+    console.log('发送API请求...');
     
-    console.log('发送给OpenAI Whisper的input参数:', { 
-      hasAudio: !!input.audio, 
-      audioPrefix: input.audio?.substring(0, 50),
-      language: input.language || '自动检测',
-      estimatedDuration: estimatedDurationSeconds.toFixed(1) + 's'
-    });
+    // 调用OpenAI Whisper API with timeout
+    let output;
+    try {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('API请求超时')), 300000); // 5分钟超时
+      });
 
-    // 调用OpenAI Whisper API
-    const output = await replicate.run(WHISPER_MODEL_ID, { input });
+      const apiPromise = replicate.run(WHISPER_MODEL_ID, { input });
+      
+      output = await Promise.race([apiPromise, timeoutPromise]);
+    } catch (apiError: any) {
+      console.error('❌ API调用失败:', apiError);
+      
+      // 处理不同类型的API错误
+      if (apiError.message?.includes('timeout') || apiError.message?.includes('API请求超时')) {
+        return NextResponse.json({ 
+          error: '转录处理超时，请尝试使用较短的音频文件或稍后重试',
+          suggestion: '建议：将音频文件分割成5分钟以内的片段'
+        }, { status: 408 });
+      }
+      
+      if (apiError.message?.includes('Unauthorized') || apiError.status === 401) {
+        return NextResponse.json({ 
+          error: 'API Token无效或已过期，请更新REPLICATE_API_TOKEN',
+          needsApiToken: true
+        }, { status: 401 });
+      }
+      
+      if (apiError.message?.includes('Rate limit')) {
+        return NextResponse.json({ 
+          error: '请求频率过高，请等待几分钟后重试'
+        }, { status: 429 });
+      }
+      
+      if (apiError.message?.includes('Invalid input')) {
+        return NextResponse.json({ 
+          error: '音频文件格式不支持，请使用MP3、WAV等常见格式'
+        }, { status: 400 });
+      }
+      
+      // 通用错误处理
+      return NextResponse.json({ 
+        error: `转录服务暂时不可用: ${apiError.message || '未知错误'}`,
+        suggestion: '请稍后重试，或联系技术支持'
+      }, { status: 500 });
+    }
 
-    console.log('==== OpenAI Whisper API 原始输出 ====');
+    console.log('==== API响应处理 ====');
     console.log('输出类型:', typeof output);
-    console.log('完整输出:', JSON.stringify(output, null, 2));
-
-    // 处理输出格式 - 根据你的示例，输出应该有segments数组
+    
+    // 处理输出格式
     let segments = [];
     let detectedLanguage = 'en';
     
     if ((output as any)?.segments && Array.isArray((output as any).segments)) {
       console.log('✅ 检测到segments数组，长度:', (output as any).segments.length);
       
-      // 处理segments数据
       const rawSegments = (output as any).segments;
-      console.log('原始segments信息:', rawSegments.map((seg: any) => ({
-        id: seg.id,
-        start: seg.start,
-        end: seg.end,
-        textLength: seg.text?.length || 0
-      })));
       
       segments = rawSegments.map((seg: any, index: number) => ({
         speaker: `Speaker ${(index % 3) + 1}`,
@@ -150,29 +189,11 @@ export async function POST(req: NextRequest) {
         id: seg.id || index,
         seek: seg.start || seg.seek || 0,
         end: seg.end || 0
-      })).filter((seg: any) => seg.text.trim().length > 0); // 过滤空文本
+      })).filter((seg: any) => seg.text.trim().length > 0);
       
       if (segments.length > 0) {
         const allText = segments.map((s: any) => s.text).join(' ');
         console.log('过滤后的segments数量:', segments.length);
-        console.log('最后一个segment:', segments[segments.length - 1]);
-        console.log('所有转录文本长度:', allText.length);
-        
-        // 检查音频时长vs转录覆盖时长
-        const lastSegment = segments[segments.length - 1];
-        const totalTranscribedTime = lastSegment.end || lastSegment.startTime;
-        console.log('转录覆盖的总时长:', totalTranscribedTime, '秒');
-        
-        // 检查是否可能有音频截断
-        const completionRatio = totalTranscribedTime / estimatedDurationSeconds;
-        console.log('转录完整度:', (completionRatio * 100).toFixed(1) + '%');
-        
-        if (completionRatio < 0.8) {
-          console.log('⚠️ 警告：转录可能不完整！');
-          console.log('预估音频时长:', estimatedDurationSeconds.toFixed(1), '秒');
-          console.log('实际转录时长:', totalTranscribedTime, '秒');
-          console.log('可能原因：1. 音频质量问题 2. API处理限制 3. 文件格式问题');
-        }
         
         // 简单的语言检测
         const chineseChars = (allText.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -181,17 +202,14 @@ export async function POST(req: NextRequest) {
         
         detectedLanguage = chineseRatio > 0.3 ? 'zh' : 'en';
         console.log('检测到的语言:', detectedLanguage);
-        console.log('中文字符比例:', (chineseRatio * 100).toFixed(1) + '%');
       } else {
         console.log('⚠️ 警告：过滤后没有有效的segments');
       }
     } else {
-      console.log('❌ 未检测到segments数组');
-      console.log('API返回的完整结构:', Object.keys(output as any || {}));
+      console.log('❌ 未检测到segments数组，尝试其他格式...');
       
       // 尝试其他可能的格式
       if (typeof output === 'string') {
-        console.log('尝试使用字符串格式');
         segments = [{
           speaker: 'Speaker 1',
           text: output,
@@ -201,7 +219,6 @@ export async function POST(req: NextRequest) {
           end: 0
         }];
       } else if ((output as any)?.text) {
-        console.log('尝试使用text字段');
         segments = [{
           speaker: 'Speaker 1',
           text: (output as any).text,
@@ -213,49 +230,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    console.log('==== 最终结果 ====');
-    console.log('segments数量:', segments.length);
-    console.log('最终语言:', detectedLanguage);
-    
     if (segments.length === 0) {
       console.log('❌ 错误：没有生成任何转录结果');
-      throw new Error('转录未产生任何结果，请检查音频文件质量或稍后重试');
+      return NextResponse.json({ 
+        error: '转录未产生任何结果',
+        suggestion: '请检查音频文件质量，确保包含可识别的语音内容'
+      }, { status: 422 });
     }
     
-    console.log('==== 转录请求结束 ====');
+    console.log('==== 转录成功完成 ====');
+    console.log('segments数量:', segments.length);
+    console.log('最终语言:', detectedLanguage);
 
     return NextResponse.json({ 
       transcript: segments,
       detectedLanguage: detectedLanguage
     });
   } catch (e: any) {
-    console.error('❌ 转录API错误:', e);
+    console.error('❌ 转录处理错误:', e);
     
-    // 提供更友好的错误信息
-    let errorMessage = '转录失败';
+    // 确保返回JSON格式的错误响应
+    const errorMessage = e.message || '转录处理失败';
     
-    if (e.message) {
-      if (e.message.includes('Unauthorized') || e.message.includes('401')) {
-        errorMessage = 'API Token无效或已过期，请更新REPLICATE_API_TOKEN';
-      } else if (e.message.includes('Prediction interrupted')) {
-        errorMessage = '转录服务暂时不可用，请稍后重试';
-      } else if (e.message.includes('转录超时')) {
-        errorMessage = '音频处理超时，建议使用较短的音频文件或分割音频';
-      } else if (e.message.includes('Invalid input')) {
-        errorMessage = '音频文件格式不支持，请使用 MP3、WAV 等常见格式';
-      } else if (e.message.includes('File too large')) {
-        errorMessage = '文件太大，请使用小于50MB的音频文件';
-      } else if (e.message.includes('Rate limit')) {
-        errorMessage = '请求频率过高，请稍后重试';
-      } else {
-        errorMessage = e.message;
-      }
-    }
-    
-    console.error('返回错误信息:', errorMessage);
     return NextResponse.json({ 
       error: errorMessage,
-      needsApiToken: errorMessage.includes('API Token')
+      timestamp: new Date().toISOString(),
+      suggestion: '请检查音频文件格式和网络连接，然后重试'
     }, { status: 500 });
   }
 } 
