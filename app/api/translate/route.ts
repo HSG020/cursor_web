@@ -1,124 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
-
-const XAI_API_KEY = process.env.XAI_API_KEY || 'xai-eltoN4tuY2q9O2fVTFFLcQspOU9sbypjuLZhTK9q1LauFsRbps9HbcP7ybTz4Eu08aUOgYHB1hggl2kS';
+const XAI_API_TOKEN = process.env.XAI_API_TOKEN;
 
 export async function POST(req: NextRequest) {
-  console.log('🌐 翻译API被调用');
-  
   try {
-    const { text, targetLang } = await req.json();
-    console.log('📝 请求参数:', { textLength: text?.length, targetLang });
+    const { text, targetLang, sourceLang } = await req.json();
 
-    if (!text || !targetLang) {
-      console.log('❌ 参数缺失');
-      return NextResponse.json({ error: '缺少参数' }, { status: 400 });
+    if (!text) {
+      return NextResponse.json({ error: '没有提供要翻译的文本' }, { status: 400 });
     }
 
-    console.log('翻译请求:', { textLength: text.length, targetLang, hasApiKey: !!XAI_API_KEY });
-
-    // 根据目标语言设置翻译提示
-    let targetLanguage = '';
-    switch(targetLang) {
-      case 'zh':
-      case 'zh-CN':
-        targetLanguage = '中文';
-        break;
-      case 'en':
-        targetLanguage = '英文';
-        break;
-      case 'es':
-        targetLanguage = '西班牙语';
-        break;
-      case 'fr':
-        targetLanguage = '法语';
-        break;
-      case 'de':
-        targetLanguage = '德语';
-        break;
-      case 'ja':
-        targetLanguage = '日语';
-        break;
-      default:
-        targetLanguage = targetLang;
+    if (!XAI_API_TOKEN) {
+      return NextResponse.json({ error: '翻译服务未配置' }, { status: 500 });
     }
 
-    // 如果没有XAI API key，返回一个fallback翻译
-    if (!XAI_API_KEY || XAI_API_KEY === 'your_xai_api_key_here') {
-      console.log('🔄 使用fallback翻译 (无有效API key)');
-      return NextResponse.json({ 
-        translation: `[翻译到${targetLanguage}] ${text}` 
-      });
-    }
+    // 语言映射
+    const languageMap: { [key: string]: string } = {
+      'en': '英语',
+      'zh': '中文',
+      'es': '西班牙语',
+      'fr': '法语',
+      'de': '德语',
+      'ja': '日语',
+      'ru': '俄语',
+      'ar': '阿拉伯语',
+      'hi': '印地语',
+      'pt': '葡萄牙语',
+      'it': '意大利语',
+      'ko': '韩语',
+      'th': '泰语',
+      'vi': '越南语'
+    };
 
-    const prompt = `请将以下内容翻译成${targetLanguage}，只返回翻译后的文本，不要解释：\n\n${text}`;
+    const sourceLangName = languageMap[sourceLang] || sourceLang;
+    const targetLangName = languageMap[targetLang] || targetLang;
 
-    console.log('调用xAI API...');
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    const systemPrompt = `你是一个专业的翻译助手。请将提供的文本从${sourceLangName}翻译成${targetLangName}。要求：
+1. 保持原文的语义和语调
+2. 如果是对话内容，保持说话人的风格
+3. 专业术语要准确翻译
+4. 保持段落结构不变
+5. 只返回翻译结果，不要添加任何解释或说明`;
+
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${XAI_API_KEY}`,
+        'Authorization': `Bearer ${XAI_API_TOKEN}`
       },
       body: JSON.stringify({
         messages: [
-          { role: 'system', content: 'You are a professional translation assistant. Translate text accurately while preserving the original meaning and context.' },
-          { role: 'user', content: prompt }
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: text
+          }
         ],
-        model: 'grok-3-mini-beta',
+        model: 'grok-3-latest',
         stream: false,
-        temperature: 0.1
-      }),
+        temperature: 0.3
+      })
     });
 
-    console.log('xAI API 响应状态:', res.status, res.statusText);
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error('xAI API 错误响应:', errorText);
-      
-      // 如果API失败，使用fallback翻译
-      console.log('🔄 使用fallback翻译 (API失败)');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Grok API错误:', errorText);
       return NextResponse.json({ 
-        translation: `[${targetLanguage}翻译] ${text}` 
-      });
+        error: `翻译服务错误: ${response.status}` 
+      }, { status: 500 });
     }
 
-    const data = await res.json();
-    console.log('xAI API 响应数据:', { hasChoices: !!data.choices, choicesLength: data.choices?.length });
-    
-    const translation = data.choices?.[0]?.message?.content || '';
+    const data = await response.json();
+    const translation = data.choices?.[0]?.message?.content;
 
     if (!translation) {
-      console.error('翻译结果为空');
-      // 使用fallback翻译
-      console.log('🔄 使用fallback翻译 (空结果)');
-      return NextResponse.json({ 
-        translation: `[${targetLanguage}翻译] ${text}` 
-      });
+      return NextResponse.json({ error: '翻译服务返回空结果' }, { status: 500 });
     }
 
-    console.log('✅ 翻译成功:', { originalLength: text.length, translationLength: translation.length });
-    return NextResponse.json({ translation });
-    
-  } catch (e: any) {
-    console.error('❌ 翻译服务错误:', e);
-    console.error('错误详情:', e.message, e.stack);
-    
-    // 获取原文用于fallback
-    let originalText = 'Unknown text';
-    try {
-      const { text } = await req.json();
-      originalText = text || 'Unknown text';
-    } catch {
-      // 忽略解析错误
-    }
-    
-    // 即使出错也返回fallback翻译，而不是错误
-    console.log('🔄 使用fallback翻译 (异常)');
     return NextResponse.json({ 
-      translation: `[翻译服务暂时不可用] 原文: ${originalText}` 
+      translation,
+      sourceLang: sourceLangName,
+      targetLang: targetLangName
     });
+
+  } catch (error) {
+    console.error('翻译API错误:', error);
+    return NextResponse.json({ 
+      error: '翻译服务内部错误' 
+    }, { status: 500 });
   }
 } 

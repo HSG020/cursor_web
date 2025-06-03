@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { AudioUploader } from "@/components/transcription/audio-uploader"
 import { LanguageSelector } from "@/components/transcription/language-selector"
@@ -48,6 +48,183 @@ export default function Home() {
   const [transcriptLang, setTranscriptLang] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [splitInfo, setSplitInfo] = useState<{wasSplit: boolean, totalSegments?: number} | null>(null)
+  
+  // 添加selectedFile状态来跟踪当前选择的文件
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  
+  // 添加演示模式状态
+  const [isDemoMode, setIsDemoMode] = useState(false)
+  const [demoInstructions, setDemoInstructions] = useState<string[]>([])
+
+  // Web Speech API 支持检测
+  const [webSpeechSupported, setWebSpeechSupported] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+
+  useEffect(() => {
+    // 检查浏览器是否支持Web Speech API
+    const isSupported = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
+    setWebSpeechSupported(isSupported)
+  }, [])
+
+  // Web Speech API 录音功能
+  const startListening = async () => {
+    if (!webSpeechSupported) {
+      setError('您的浏览器不支持语音识别功能')
+      return
+    }
+
+    try {
+      const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition
+      const recognition = new SpeechRecognition()
+      
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.lang = language === 'auto' ? 'zh-CN' : language
+
+      setIsListening(true)
+      setTranscript([])
+      setError('')
+
+      let finalTranscript = ''
+      let interimTranscript = ''
+
+      recognition.onresult = (event) => {
+        finalTranscript = ''
+        interimTranscript = ''
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript
+          } else {
+            interimTranscript += transcript
+          }
+        }
+
+        // 更新结果
+        const segments: Segment[] = []
+        if (finalTranscript) {
+          segments.push({
+            speaker: 'Speaker 1',
+            text: finalTranscript,
+            startTime: 0,
+            id: 0,
+            seek: 0,
+            end: 0
+          })
+        }
+        if (interimTranscript) {
+          segments.push({
+            speaker: 'Speaker 1',
+            text: `[正在识别] ${interimTranscript}`,
+            startTime: 0,
+            id: 1,
+            seek: 0,
+            end: 0
+          })
+        }
+        setTranscript(segments)
+      }
+
+      recognition.onerror = (event) => {
+        console.error('语音识别错误:', event.error)
+        setError(`语音识别错误: ${event.error}`)
+        setIsListening(false)
+      }
+
+      recognition.onend = () => {
+        setIsListening(false)
+      }
+
+      recognition.start()
+    } catch (error) {
+      console.error('启动语音识别失败:', error)
+      setError('启动语音识别失败')
+      setIsListening(false)
+    }
+  }
+
+  const stopListening = () => {
+    setIsListening(false)
+    // 语音识别会自动停止
+  }
+
+  // 修复：文件选择处理函数
+  const handleFileSelected = (file: File) => {
+    console.log('✅ 文件已选择:', file.name, file.size)
+    setSelectedFile(file)
+    setError(null)
+    // 立即开始转录
+    handleTranscribe(file)
+  }
+
+  // 修复：转录处理函数
+  const handleTranscribe = async (file?: File) => {
+    const audioFile = file || selectedFile
+    
+    if (!audioFile) {
+      setError('请选择音频文件')
+      return
+    }
+
+    console.log('🎵 开始转录文件:', audioFile.name)
+    setProcessing(true)
+    setError(null)
+    setTranscript([])
+    setIsStreaming(false)
+    setSplitInfo(null)
+    setTranscriptLang('')
+    setStage("uploading")
+    setProgress(0)
+
+    try {
+      // 模拟进度更新
+      setStage("uploading")
+      await simulateProgress(0, 20, 1000)
+      
+      setStage("processing")
+      await simulateProgress(20, 40, 1000)
+      
+      setStage("analyzing")
+      await simulateProgress(40, 60, 1000)
+      
+      setStage("transcribing")
+      await simulateProgress(60, 90, 1000)
+
+      // 创建FormData并发送到API
+      const formData = new FormData()
+      formData.append('file', audioFile)
+      formData.append('language', audioLang)
+
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || '转录失败')
+      }
+
+      setTranscript(result.transcript || [])
+      setTranscriptLang(result.detectedLanguage || audioLang)
+      setIsDemoMode(result.isDemoMode || false)
+      setDemoInstructions(result.instructions || [])
+      setProgress(100)
+      setStage("complete")
+      setIsStreaming(false)
+      
+      console.log('✅ 转录完成:', result.transcript?.length || 0, '个片段')
+    } catch (error) {
+      console.error("❌ 转录错误:", error)
+      setError(error instanceof Error ? error.message : "转录过程中发生未知错误")
+      setStage("idle")
+      setProgress(0)
+    } finally {
+      setProcessing(false)
+    }
+  }
 
   const simulateProgress = async (start: number, end: number, duration: number) => {
     const steps = 20
@@ -57,74 +234,6 @@ export default function Home() {
     for (let i = 0; i <= steps; i++) {
       setProgress(start + increment * i)
       await new Promise(resolve => setTimeout(resolve, stepDuration))
-    }
-  }
-
-  const handleFileSelected = async (file: File) => {
-    try {
-      console.log('🎬 开始文件处理:', file.name, file.size, 'bytes')
-      
-      // 强制清除所有状态
-      setError(null)
-      setProcessing(true)
-      setTranscript([])
-      setIsStreaming(false)
-      setSplitInfo(null)
-      setTranscriptLang('')
-      setStage("idle")
-      setProgress(0)
-      
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      setStage("uploading")
-      setProgress(10)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      setStage("processing")
-      setProgress(20)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      setStage("analyzing")
-      setProgress(30)
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      setStage("transcribing")
-      setProgress(40)
-      setIsStreaming(true)
-
-      // 在API调用期间继续更新进度
-      const progressInterval = setInterval(() => {
-        setProgress(prev => {
-          if (prev < 90) {
-            return prev + 5
-          }
-          return prev
-        })
-      }, 2000)
-
-      const result = await transcribeAudio(file, audioLang)
-      
-      // 清除进度更新定时器
-      clearInterval(progressInterval)
-      
-      console.log('✅ 转录结果:', result)
-      setTranscript(result.transcript)
-      setTranscriptLang(result.detectedLanguage || audioLang)
-      setSplitInfo({
-        wasSplit: result.wasSplit || false,
-        totalSegments: result.totalSegments
-      })
-      setProgress(100)
-      setStage("complete")
-      setIsStreaming(false)
-      
-    } catch (error) {
-      console.error("❌ 转录错误:", error)
-      setError(error instanceof Error ? error.message : "转录过程中发生未知错误")
-      setStage("idle")
-      setProgress(0)
-    } finally {
-      setProcessing(false)
     }
   }
 
@@ -412,6 +521,8 @@ export default function Home() {
             transcriptLang={transcriptLang}
             isStreaming={isStreaming}
             splitInfo={splitInfo}
+            isDemoMode={isDemoMode}
+            demoInstructions={demoInstructions}
           />
         </div>
       </div>

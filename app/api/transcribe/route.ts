@@ -24,6 +24,61 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '文件太大，最大支持50MB' }, { status: 400 });
     }
 
+    // 检查是否有有效的API Token
+    if (!REPLICATE_API_TOKEN || REPLICATE_API_TOKEN === 'YOUR_TOKEN_HERE' || REPLICATE_API_TOKEN.length < 10) {
+      console.log('⚠️ 没有有效的Replicate API Token，使用演示模式');
+      
+      // 返回演示数据，让用户可以看到界面效果
+      const demoSegments = [
+        {
+          speaker: 'Speaker 1',
+          text: '欢迎使用VoiceScribe语音转文字平台！',
+          startTime: 0,
+          id: 0,
+          seek: 0,
+          end: 3.2
+        },
+        {
+          speaker: 'Speaker 1', 
+          text: '这是一个演示转录结果，展示应用的界面和功能。',
+          startTime: 3.5,
+          id: 1,
+          seek: 3.5,
+          end: 7.8
+        },
+        {
+          speaker: 'Speaker 2',
+          text: '要使用真实转录功能，请配置有效的Replicate API Token。',
+          startTime: 8.0,
+          id: 2,
+          seek: 8.0,
+          end: 12.5
+        },
+        {
+          speaker: 'Speaker 1',
+          text: `您上传的文件是：${file.name}，大小：${(file.size / 1024 / 1024).toFixed(2)}MB`,
+          startTime: 13.0,
+          id: 3,
+          seek: 13.0,
+          end: 17.0
+        }
+      ];
+      
+      return NextResponse.json({ 
+        transcript: demoSegments,
+        detectedLanguage: language === 'auto' ? 'zh' : language,
+        isDemoMode: true,
+        instructions: [
+          '🎯 这是演示模式，展示应用界面和功能',
+          '🔑 要使用真实转录，请获取Replicate API Token：',
+          '   1. 访问 https://replicate.com/account/api-tokens',
+          '   2. 注册/登录账号并创建新的API Token',
+          '   3. 更新 .env.local 文件中的 REPLICATE_API_TOKEN',
+          '   4. 重启应用即可使用真实转录功能'
+        ]
+      });
+    }
+
     console.log('==== 转录请求开始 ====');
     console.log('文件信息:', { fileName: file.name, fileSize: file.size, fileType: file.type });
     console.log('语言设置:', language);
@@ -41,7 +96,7 @@ export async function POST(req: NextRequest) {
     const base64Audio = Buffer.from(arrayBuffer).toString('base64');
     const replicate = new Replicate({ auth: REPLICATE_API_TOKEN });
 
-    // 根据你提供的API格式构建输入参数
+    // 根据OpenAI Whisper API格式构建输入参数
     const input: Record<string, any> = {
       audio: `data:${file.type};base64,${base64Audio}`,
     };
@@ -58,27 +113,17 @@ export async function POST(req: NextRequest) {
     const estimatedDurationSeconds = file.size / (44100 * 2 * 2); // 假设44.1kHz, 16bit, stereo
     console.log('估算音频时长:', estimatedDurationSeconds.toFixed(1), '秒');
     
-    // 根据音频长度调整超时时间
-    const timeoutMs = Math.max(300000, estimatedDurationSeconds * 5000); // 至少5分钟，或者音频长度的5倍
-    console.log('设置超时时间:', (timeoutMs / 1000).toFixed(1), '秒');
-
-    // 对于长音频，添加特殊参数
-    if (estimatedDurationSeconds > 300) { // 超过5分钟
-      console.log('🔄 检测到长音频，使用优化参数');
-      console.log('长音频提示: 建议将音频分割为较短片段以获得更好的转录效果');
-    }
-
-    console.log('发送给Whisper的input参数:', { 
+    console.log('发送给OpenAI Whisper的input参数:', { 
       hasAudio: !!input.audio, 
       audioPrefix: input.audio?.substring(0, 50),
       language: input.language || '自动检测',
       estimatedDuration: estimatedDurationSeconds.toFixed(1) + 's'
     });
 
-    // 直接调用Replicate API，不设置超时
+    // 调用OpenAI Whisper API
     const output = await replicate.run(WHISPER_MODEL_ID, { input });
 
-    console.log('==== Whisper API 原始输出 ====');
+    console.log('==== OpenAI Whisper API 原始输出 ====');
     console.log('输出类型:', typeof output);
     console.log('完整输出:', JSON.stringify(output, null, 2));
 
@@ -89,7 +134,7 @@ export async function POST(req: NextRequest) {
     if ((output as any)?.segments && Array.isArray((output as any).segments)) {
       console.log('✅ 检测到segments数组，长度:', (output as any).segments.length);
       
-      // 检查segments完整性
+      // 处理segments数据
       const rawSegments = (output as any).segments;
       console.log('原始segments信息:', rawSegments.map((seg: any) => ({
         id: seg.id,
@@ -190,7 +235,9 @@ export async function POST(req: NextRequest) {
     let errorMessage = '转录失败';
     
     if (e.message) {
-      if (e.message.includes('Prediction interrupted')) {
+      if (e.message.includes('Unauthorized') || e.message.includes('401')) {
+        errorMessage = 'API Token无效或已过期，请更新REPLICATE_API_TOKEN';
+      } else if (e.message.includes('Prediction interrupted')) {
         errorMessage = '转录服务暂时不可用，请稍后重试';
       } else if (e.message.includes('转录超时')) {
         errorMessage = '音频处理超时，建议使用较短的音频文件或分割音频';
@@ -206,6 +253,9 @@ export async function POST(req: NextRequest) {
     }
     
     console.error('返回错误信息:', errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ 
+      error: errorMessage,
+      needsApiToken: errorMessage.includes('API Token')
+    }, { status: 500 });
   }
 } 
