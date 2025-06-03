@@ -201,7 +201,23 @@ export default function Home() {
         body: formData
       })
 
-      const result = await response.json()
+      console.log('📡 API响应状态:', response.status, response.statusText)
+      console.log('📡 响应Content-Type:', response.headers.get('content-type'))
+
+      let result;
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          result = await response.json();
+        } else {
+          const responseText = await response.text();
+          console.error('📡 API返回非JSON响应:', responseText);
+          throw new Error('服务器返回的不是JSON格式，可能是内部错误');
+        }
+      } catch (parseError) {
+        console.error('解析API响应失败:', parseError);
+        throw new Error('API响应格式错误，无法解析');
+      }
 
       if (!response.ok) {
         throw new Error(result.error || '转录失败')

@@ -161,11 +161,41 @@ async function transcribeSegment(audioBlob: Blob, language: string, segmentIndex
       console.log(`📡 片段${segmentIndex + 1} API响应状态:`, res.status, res.statusText);
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `HTTP ${res.status}`);
+        let errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+        
+        // 安全地尝试解析错误响应
+        try {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await res.json();
+            errorMessage = errorData.error || errorMessage;
+          } else {
+            const textError = await res.text();
+            console.log('📡 非JSON错误响应:', textError);
+            errorMessage = textError || errorMessage;
+          }
+        } catch (parseError) {
+          console.warn('无法解析错误响应:', parseError);
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      const data = await res.json();
+      let data;
+      try {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const responseText = await res.text();
+          console.error('📡 API返回非JSON响应:', responseText);
+          throw new Error('API返回的不是JSON格式，可能是服务器错误');
+        }
+      } catch (parseError) {
+        console.error('解析API响应失败:', parseError);
+        throw new Error('API响应格式错误，无法解析JSON');
+      }
+
       console.log(`✅ 片段 ${segmentIndex + 1} 转录成功`);
       
       return data.transcript;
@@ -236,13 +266,44 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
         });
 
         console.log('📡 API响应状态:', res.status, res.statusText);
+        console.log('📡 响应Content-Type:', res.headers.get('content-type'));
 
         if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || `HTTP ${res.status}`);
+          let errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+          
+          // 安全地尝试解析错误响应
+          try {
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const errorData = await res.json();
+              errorMessage = errorData.error || errorMessage;
+            } else {
+              const textError = await res.text();
+              console.log('📡 非JSON错误响应:', textError);
+              errorMessage = textError || errorMessage;
+            }
+          } catch (parseError) {
+            console.warn('无法解析错误响应:', parseError);
+          }
+          
+          throw new Error(errorMessage);
         }
 
-        const data = await res.json();
+        let data;
+        try {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            data = await res.json();
+          } else {
+            const responseText = await res.text();
+            console.error('📡 API返回非JSON响应:', responseText);
+            throw new Error('API返回的不是JSON格式，可能是服务器错误');
+          }
+        } catch (parseError) {
+          console.error('解析API响应失败:', parseError);
+          throw new Error('API响应格式错误，无法解析JSON');
+        }
+
         console.log('✅ 转录成功，segments数量:', data.transcript?.length || 0);
         
         return {
@@ -276,6 +337,8 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
         throw new Error('转录服务暂时不可用，请稍后重试');
       } else if (error.message.includes('无法读取音频元数据')) {
         throw new Error('音频文件格式不支持或文件损坏');
+      } else if (error.message.includes('JSON')) {
+        throw new Error('服务器响应格式错误，请稍后重试或联系技术支持');
       } else {
         throw error;
       }
