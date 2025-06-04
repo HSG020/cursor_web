@@ -1,7 +1,4 @@
 {
-  "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "framework": "nextjs",
   "functions": {
     "app/api/transcribe/route.ts": {
@@ -12,6 +9,12 @@
     },
     "app/api/translate/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/debug/route.ts": {
+      "maxDuration": 10
+    },
+    "app/api/health/route.ts": {
+      "maxDuration": 10
     }
   },
   "headers": [
@@ -32,10 +35,5 @@
         }
       ]
     }
-  ],
-  "env": {
-    "REPLICATE_API_TOKEN": "@replicate_api_token",
-    "XAI_API_TOKEN": "@xai_api_token",
-    "FORCE_REDEPLOY": "2025-06-04T00:30:00Z"
-  }
+  ]
 } 
