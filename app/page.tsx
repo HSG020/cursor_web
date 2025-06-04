@@ -196,9 +196,25 @@ export default function Home() {
       formData.append('file', audioFile)
       formData.append('language', audioLang)
 
+      // 添加调试日志
+      console.log('📤 准备发送请求:')
+      console.log('  - 文件名:', audioFile.name)
+      console.log('  - 文件大小:', audioFile.size)
+      console.log('  - 文件类型:', audioFile.type)
+      console.log('  - 语言设置:', audioLang)
+      console.log('  - FormData entries:')
+      for (const [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`    ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`)
+        } else {
+          console.log(`    ${key}: ${value}`)
+        }
+      }
+
       const response = await fetch('/api/transcribe', {
         method: 'POST',
-        body: formData
+        body: formData,
+        // 不要手动设置Content-Type，让浏览器自动设置multipart/form-data边界
       })
 
       console.log('📡 API响应状态:', response.status, response.statusText)
