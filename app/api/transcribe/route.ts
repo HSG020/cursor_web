@@ -39,6 +39,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '文件太大，最大支持50MB' }, { status: 400 });
     }
 
+    // Vercel平台限制检查
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ 
+        error: '文件大小超过Vercel平台限制（5MB）',
+        suggestion: '请使用以下方案之一：\n1. 将音频文件压缩到5MB以下\n2. 分割音频文件为多个小片段\n3. 考虑使用其他部署平台（如Netlify、Railway等）',
+        platform: 'vercel',
+        maxSize: '5MB',
+        currentSize: `${(file.size / 1024 / 1024).toFixed(2)}MB`
+      }, { status: 413 });
+    }
+
     // 检查是否有有效的API Token
     if (!REPLICATE_API_TOKEN || REPLICATE_API_TOKEN === 'YOUR_TOKEN_HERE' || REPLICATE_API_TOKEN.length < 10) {
       console.log('⚠️ 没有有效的Replicate API Token，使用演示模式');

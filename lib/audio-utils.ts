@@ -139,4 +139,104 @@ export function formatDuration(seconds: number): string {
 // 检查是否需要分割音频
 export function shouldSplitAudio(duration: number, maxDuration: number = 360): boolean {
   return duration > maxDuration; // 默认6分钟以上需要分割
+}
+
+/**
+ * 压缩音频文件到指定大小
+ * @param file 原始音频文件
+ * @param maxSizeMB 最大大小（MB）
+ * @param quality 压缩质量 (0.1-1.0)
+ * @returns 压缩后的文件
+ */
+export async function compressAudioFile(file: File, maxSizeMB: number = 5, quality: number = 0.7): Promise<File> {
+  const maxSize = maxSizeMB * 1024 * 1024;
+  
+  if (file.size <= maxSize) {
+    return file;
+  }
+
+  return new Promise((resolve, reject) => {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const fileReader = new FileReader();
+    
+    fileReader.onload = async (e) => {
+      try {
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // 计算压缩比率
+        const compressionRatio = Math.sqrt(maxSize / file.size);
+        const newSampleRate = Math.floor(audioBuffer.sampleRate * compressionRatio);
+        
+        // 创建新的音频缓冲区
+        const offlineContext = new OfflineAudioContext(
+          audioBuffer.numberOfChannels,
+          Math.floor(audioBuffer.length * compressionRatio),
+          newSampleRate
+        );
+        
+        const source = offlineContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineContext.destination);
+        source.start();
+        
+        const compressedBuffer = await offlineContext.startRendering();
+        
+        // 转换为 WAV 格式
+        const wav = audioBufferToWav(compressedBuffer);
+        const compressedFile = new File([wav], `compressed_${file.name}`, { type: 'audio/wav' });
+        
+        resolve(compressedFile);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    
+    fileReader.onerror = reject;
+    fileReader.readAsArrayBuffer(file);
+  });
+}
+
+/**
+ * 将 AudioBuffer 转换为 WAV 格式
+ */
+function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+  const length = buffer.length;
+  const numberOfChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+  const view = new DataView(arrayBuffer);
+  
+  // WAV 文件头
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+  
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numberOfChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numberOfChannels * 2, true);
+  view.setUint16(32, numberOfChannels * 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, length * numberOfChannels * 2, true);
+  
+  // 写入音频数据
+  let offset = 44;
+  for (let i = 0; i < length; i++) {
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+      view.setInt16(offset, sample * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+  
+  return arrayBuffer;
 } 

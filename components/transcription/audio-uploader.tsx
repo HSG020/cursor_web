@@ -201,25 +201,24 @@ export function AudioUploader({ onFileSelected, isProcessing }: AudioUploaderPro
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2 justify-center">
-              {['MP3', 'WAV', 'M4A', 'FLAC', 'OGG', 'WEBM'].map((format) => (
-                <motion.span
+            <div className="flex flex-wrap gap-2 justify-center mb-6">
+              {["MP3", "WAV", "M4A", "FLAC", "OGG", "WEBM"].map((format) => (
+                <span 
                   key={format}
-                  whileHover={{ scale: 1.05 }}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 text-blue-800 dark:text-blue-200 border border-blue-200/50 dark:border-blue-700/50"
+                  className="px-3 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full"
                 >
                   {format}
-                </motion.span>
+                </span>
               ))}
             </div>
 
-            <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1">
+            <div className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
               <div className="flex items-center justify-center gap-2">
-                <Shield className="h-3 w-3" />
-                <span>最大文件大小: 100MB</span>
+                <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+                <span>最大文件大小: 5MB（Vercel平台限制）</span>
               </div>
               <div className="flex items-center justify-center gap-2">
-                <Zap className="h-3 w-3" />
+                <div className="w-2 h-2 rounded-full bg-slate-400"></div>
                 <span>支持长音频自动分割处理</span>
               </div>
             </div>
