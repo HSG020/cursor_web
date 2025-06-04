@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 export async function GET() {
   try {
     const replicateToken = process.env.REPLICATE_API_TOKEN;
-    const xaiToken = process.env.XAI_API_KEY;
+    const xaiToken = process.env.XAI_API_TOKEN;
     
     return NextResponse.json({
       status: 'OK',

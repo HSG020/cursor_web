@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     const replicateToken = process.env.REPLICATE_API_TOKEN;
-    const xaiToken = process.env.XAI_API_KEY;
+    const xaiToken = process.env.XAI_API_TOKEN;
     
     return NextResponse.json({
       status: 'OK',
@@ -13,6 +13,8 @@ export async function GET() {
       xaiTokenExists: !!xaiToken,
       replicateTokenLength: replicateToken ? replicateToken.length : 0,
       xaiTokenLength: xaiToken ? xaiToken.length : 0,
+      replicatePrefix: replicateToken ? replicateToken.substring(0, 8) + '...' : 'NOT_FOUND',
+      xaiPrefix: xaiToken ? xaiToken.substring(0, 8) + '...' : 'NOT_FOUND',
     });
   } catch (error) {
     return NextResponse.json({
