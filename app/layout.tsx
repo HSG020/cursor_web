@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/ui/theme-provider';
 import { LanguageProvider } from '@/lib/language-context';
 import { Header } from '@/components/layout/header';
+import Script from 'next/script';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -30,6 +31,12 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/favicon.svg" />
       </head>
       <body className={inter.className}>
+        <Script
+          defer
+          data-domain="b2bfollowup.xyz"
+          src="https://plausible.io/js/script.file-downloads.outbound-links.js"
+          strategy="afterInteractive"
+        />
         <ThemeProvider 
           attribute="class" 
           defaultTheme="system" 
