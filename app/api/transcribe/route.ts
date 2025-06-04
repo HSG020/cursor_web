@@ -152,21 +152,25 @@ export async function POST(req: NextRequest) {
     // 调用OpenAI Whisper API with timeout
     let output;
     try {
+      // 缩短超时时间到2分钟，避免Vercel函数超时
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('API请求超时')), 300000); // 5分钟超时
+        setTimeout(() => reject(new Error('API请求超时（120秒）')), 120000); // 2分钟超时
       });
 
       const apiPromise = replicate.run(WHISPER_MODEL_ID, { input });
       
       output = await Promise.race([apiPromise, timeoutPromise]);
+      
+      console.log('✅ API调用成功');
     } catch (apiError: any) {
       console.error('❌ API调用失败:', apiError);
       
       // 处理不同类型的API错误
       if (apiError.message?.includes('timeout') || apiError.message?.includes('API请求超时')) {
         return NextResponse.json({ 
-          error: '转录处理超时，请尝试使用较短的音频文件或稍后重试',
-          suggestion: '建议：将音频文件分割成5分钟以内的片段'
+          error: '转录处理超时（2分钟限制）',
+          suggestion: '请尝试以下解决方案：\n1. 使用更短的音频文件（建议3分钟以内）\n2. 压缩音频文件质量\n3. 稍后重试',
+          timeout: true
         }, { status: 408 });
       }
       
@@ -192,7 +196,8 @@ export async function POST(req: NextRequest) {
       // 通用错误处理
       return NextResponse.json({ 
         error: `转录服务暂时不可用: ${apiError.message || '未知错误'}`,
-        suggestion: '请稍后重试，或联系技术支持'
+        suggestion: '请稍后重试，或联系技术支持',
+        details: apiError.message
       }, { status: 500 });
     }
 

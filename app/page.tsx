@@ -250,7 +250,23 @@ export default function Home() {
       console.log('✅ 转录完成:', result.transcript?.length || 0, '个片段')
     } catch (error) {
       console.error("❌ 转录错误:", error)
-      setError(error instanceof Error ? error.message : "转录过程中发生未知错误")
+      
+      // 改进错误处理
+      let errorMessage = "转录过程中发生未知错误";
+      
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        errorMessage = "网络连接失败，请检查网络连接并重试";
+      } else if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = "服务器连接失败，可能是网络问题或服务器繁忙，请稍后重试";
+        } else if (error.message.includes('timeout') || error.message.includes('超时')) {
+          errorMessage = "转录处理超时，请尝试使用更短的音频文件";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage)
       setStage("idle")
       setProgress(0)
     } finally {
