@@ -31,12 +31,33 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/favicon.svg" />
       </head>
       <body className={inter.className}>
+        {/* Google Analytics */}
+        <Script
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-TB09YKTD26"
+          strategy="afterInteractive"
+        />
+        <Script
+          id="google-analytics"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-TB09YKTD26');
+            `,
+          }}
+        />
+        
+        {/* Plausible Analytics */}
         <Script
           defer
-          data-domain="b2bfollowup.xyz"
+          data-domain="www.b2bfollowup.xyz"
           src="https://plausible.io/js/script.file-downloads.outbound-links.js"
           strategy="afterInteractive"
         />
+        
         <ThemeProvider 
           attribute="class" 
           defaultTheme="system" 
