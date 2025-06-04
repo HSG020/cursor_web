@@ -14,8 +14,28 @@
       "maxDuration": 60
     }
   },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
   "env": {
     "REPLICATE_API_TOKEN": "@replicate_api_token",
-    "XAI_API_TOKEN": "@xai_api_token"
+    "XAI_API_TOKEN": "@xai_api_token",
+    "FORCE_REDEPLOY": "2025-06-04T00:30:00Z"
   }
 } 
