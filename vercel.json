@@ -1,20 +1,8 @@
 {
   "framework": "nextjs",
   "functions": {
-    "app/api/transcribe/route.ts": {
+    "app/api/*/route.ts": {
       "maxDuration": 300
-    },
-    "app/api/ai-assistant/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/translate/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/debug/route.ts": {
-      "maxDuration": 10
-    },
-    "app/api/health/route.ts": {
-      "maxDuration": 10
     }
   },
   "headers": [
