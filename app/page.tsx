@@ -5,6 +5,11 @@ import { motion, AnimatePresence } from "framer-motion"
 import { AudioUploader } from "@/components/transcription/audio-uploader"
 import { LanguageSelector } from "@/components/transcription/language-selector"
 import { TranscriptDisplay } from "@/components/transcription/transcript-display"
+import { CTASection } from "@/components/landing/cta-section"
+import { PricingSection } from "@/components/landing/pricing-section"
+import { FAQSection } from "@/components/landing/faq-section"
+import { HowItWorksSection } from "@/components/landing/how-it-works-section"
+import { BenefitsSection } from "@/components/landing/benefits-section"
 import { 
   Braces, 
   Upload,
@@ -573,6 +578,21 @@ export default function Home() {
             demoInstructions={demoInstructions}
           />
         </div>
+
+        {/* How It Works Section */}
+        <HowItWorksSection />
+
+        {/* Benefits Section */}
+        <BenefitsSection />
+
+        {/* CTA Section */}
+        <CTASection />
+
+        {/* Pricing Section */}
+        <PricingSection />
+
+        {/* FAQ Section */}
+        <FAQSection />
       </div>
     </div>
   )

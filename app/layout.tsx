@@ -4,6 +4,7 @@ import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/ui/theme-provider';
 import { LanguageProvider } from '@/lib/language-context';
 import { Header } from '@/components/layout/header';
+import { Footer } from '@/components/layout/footer';
 import Script from 'next/script';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -69,6 +70,7 @@ export default function RootLayout({
             <main className="min-h-screen pt-24">
               {children}
             </main>
+            <Footer />
           </LanguageProvider>
         </ThemeProvider>
       </body>

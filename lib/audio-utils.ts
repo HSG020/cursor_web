@@ -5,20 +5,12 @@
 // 获取音频文件的时长
 export function getAudioDuration(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
-    const audio = document.createElement('audio');
-    const url = URL.createObjectURL(file);
-    
-    audio.addEventListener('loadedmetadata', () => {
-      URL.revokeObjectURL(url);
+    const audio = new Audio();
+    audio.onloadedmetadata = () => {
       resolve(audio.duration);
-    });
-    
-    audio.addEventListener('error', () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('无法读取音频元数据'));
-    });
-    
-    audio.src = url;
+    };
+    audio.onerror = reject;
+    audio.src = URL.createObjectURL(file);
   });
 }
 
@@ -183,7 +175,7 @@ export async function compressAudioFile(file: File, maxSizeMB: number = 5, quali
         const compressedBuffer = await offlineContext.startRendering();
         
         // 转换为 WAV 格式
-        const wav = audioBufferToWav(compressedBuffer);
+        const wav = await audioBufferToWav(compressedBuffer);
         const compressedFile = new File([wav], `compressed_${file.name}`, { type: 'audio/wav' });
         
         resolve(compressedFile);
@@ -195,48 +187,4 @@ export async function compressAudioFile(file: File, maxSizeMB: number = 5, quali
     fileReader.onerror = reject;
     fileReader.readAsArrayBuffer(file);
   });
-}
-
-/**
- * 将 AudioBuffer 转换为 WAV 格式
- */
-function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
-  const length = buffer.length;
-  const numberOfChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-  const view = new DataView(arrayBuffer);
-  
-  // WAV 文件头
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-  
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numberOfChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numberOfChannels * 2, true);
-  view.setUint16(32, numberOfChannels * 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, 'data');
-  view.setUint32(40, length * numberOfChannels * 2, true);
-  
-  // 写入音频数据
-  let offset = 44;
-  for (let i = 0; i < length; i++) {
-    for (let channel = 0; channel < numberOfChannels; channel++) {
-      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
-      view.setInt16(offset, sample * 0x7FFF, true);
-      offset += 2;
-    }
-  }
-  
-  return arrayBuffer;
 } 
