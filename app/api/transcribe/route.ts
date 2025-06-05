@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import Replicate from 'replicate';
 
 export const runtime = 'nodejs';
@@ -12,6 +15,12 @@ export async function POST(req: NextRequest) {
   try {
     console.log('📡 收到转录请求');
     console.log('📡 Content-Type:', req.headers.get('content-type'));
+    
+    // 检查用户认证状态
+    const session = await getServerSession(authOptions);
+    let isLoggedIn = !!(session && session.user?.id);
+    
+    console.log('👤 用户认证状态:', isLoggedIn ? `已登录: ${session.user.email}` : '未登录');
     
     // 尝试获取formData，添加错误处理
     let formData;
@@ -28,6 +37,8 @@ export async function POST(req: NextRequest) {
 
     const file = formData.get('file') as File;
     const language = formData.get('language') as string;
+    const outputLang = formData.get('outputLang') as string || language;
+    const guestUsageCount = formData.get('guestUsageCount') as string || '0';
 
     if (!file) {
       return NextResponse.json({ error: '没有找到文件' }, { status: 400 });
@@ -48,6 +59,117 @@ export async function POST(req: NextRequest) {
         maxSize: '5MB',
         currentSize: `${(file.size / 1024 / 1024).toFixed(2)}MB`
       }, { status: 413 });
+    }
+
+    // 配额检查逻辑 - 暂时移除所有限制，完全免费开放
+    console.log('🎉 免费模式：跳过所有配额检查');
+    
+    // 注释掉原有的配额检查代码
+    /*
+    if (isLoggedIn) {
+      // 已登录用户：检查数据库配额
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          include: { subscription: true }
+        });
+
+        if (!user || !user.subscription) {
+          return NextResponse.json({ 
+            error: '用户订阅信息不存在，请联系客服'
+          }, { status: 400 });
+        }
+
+        // 获取本月使用量
+        const currentMonth = new Date();
+        currentMonth.setDate(1);
+        currentMonth.setHours(0, 0, 0, 0);
+
+        const monthlyUsage = await prisma.usageRecord.aggregate({
+          where: {
+            userId: session.user.id,
+            date: {
+              gte: currentMonth
+            }
+          },
+          _sum: {
+            amount: true
+          }
+        });
+
+        const usedMinutes = monthlyUsage._sum.amount || 0;
+        
+        // 根据计划检查配额
+        let maxMinutes = 10; // 免费版默认10分钟
+        if (user.subscription.planType === "professional") {
+          maxMinutes = 500; // 专业版500分钟
+        } else if (user.subscription.planType === "enterprise") {
+          maxMinutes = 2000; // 企业版2000分钟
+        }
+
+        const remainingMinutes = maxMinutes - usedMinutes;
+        
+        // 估算音频时长（简单估算：文件大小MB * 8 / 比特率的近似值）
+        const estimatedDurationMinutes = (file.size / (1024 * 1024)) * 2; // 粗略估算
+        
+        if (remainingMinutes < estimatedDurationMinutes) {
+          return NextResponse.json({ 
+            error: `当前计划配额不足。剩余：${remainingMinutes.toFixed(1)}分钟，需要：${estimatedDurationMinutes.toFixed(1)}分钟`,
+            quota: {
+              used: usedMinutes,
+              total: maxMinutes,
+              remaining: remainingMinutes,
+              planType: user.subscription.planType
+            },
+            needsUpgrade: true
+          }, { status: 403 });
+        }
+
+        console.log(`✅ 已登录用户配额检查通过：已用 ${usedMinutes}/${maxMinutes} 分钟`);
+      } catch (dbError) {
+        console.error('❌ 数据库查询失败:', dbError);
+        // 继续处理，不因为数据库问题阻止转录
+      }
+    } else {
+      // 未登录用户：检查客户端传来的使用次数
+      const currentUsageCount = parseInt(guestUsageCount) || 0;
+      const maxGuestUsage = 5; // 未登录用户最多5次
+      
+      if (currentUsageCount >= maxGuestUsage) {
+        return NextResponse.json({ 
+          error: `免费体验次数已用完（${maxGuestUsage}次）`,
+          suggestion: '注册登录后可获得10次免费使用机会',
+          needsAuth: true,
+          guestLimitReached: true,
+          maxGuestUsage,
+          currentUsage: currentUsageCount
+        }, { status: 403 });
+      }
+      
+      console.log(`✅ 未登录用户配额检查通过：已用 ${currentUsageCount}/${maxGuestUsage} 次`);
+    }
+    */
+
+    // 在数据库中创建转录记录（如果用户已登录）
+    let transcriptionRecord;
+    if (isLoggedIn) {
+      try {
+        transcriptionRecord = await prisma.transcription.create({
+          data: {
+            userId: session.user.id,
+            fileName: file.name,
+            fileSize: file.size,
+            duration: 0, // 将在转录完成后更新
+            language: language === 'auto' ? 'auto' : language,
+            outputLang: outputLang,
+            status: 'processing'
+          }
+        });
+        console.log('📝 创建转录记录:', transcriptionRecord.id);
+      } catch (dbError) {
+        console.error('❌ 创建转录记录失败:', dbError);
+        // 继续处理，不因为数据库问题阻止转录
+      }
     }
 
     // 检查是否有有效的API Token
@@ -89,11 +211,37 @@ export async function POST(req: NextRequest) {
           end: 17.0
         }
       ];
+
+      // 更新转录记录（演示模式）
+      if (transcriptionRecord) {
+        try {
+          await prisma.transcription.update({
+            where: { id: transcriptionRecord.id },
+            data: {
+              status: 'completed',
+              transcript: JSON.stringify(demoSegments),
+              duration: 17.0
+            }
+          });
+
+          // 记录使用量（演示模式按0.5分钟计算）
+          await prisma.usageRecord.create({
+            data: {
+              userId: session.user.id,
+              type: 'transcription',
+              amount: 0.5
+            }
+          });
+        } catch (updateError) {
+          console.error('❌ 更新转录记录失败:', updateError);
+        }
+      }
       
       return NextResponse.json({ 
         transcript: demoSegments,
         detectedLanguage: language === 'auto' ? 'zh' : language,
         isDemoMode: true,
+        transcriptionId: transcriptionRecord?.id,
         instructions: [
           '🎯 这是演示模式，展示应用界面和功能',
           '🔑 要使用真实转录，请获取Replicate API Token：',
@@ -124,6 +272,15 @@ export async function POST(req: NextRequest) {
       replicate = new Replicate({ auth: REPLICATE_API_TOKEN });
     } catch (authError) {
       console.error('❌ Replicate认证失败:', authError);
+      
+      // 更新转录状态为失败
+      if (transcriptionRecord) {
+        await prisma.transcription.update({
+          where: { id: transcriptionRecord.id },
+          data: { status: 'failed' }
+        });
+      }
+      
       return NextResponse.json({ 
         error: 'API认证失败，请检查REPLICATE_API_TOKEN是否正确配置',
         needsApiToken: true
@@ -165,6 +322,14 @@ export async function POST(req: NextRequest) {
     } catch (apiError: any) {
       console.error('❌ API调用失败:', apiError);
       
+      // 更新转录状态为失败
+      if (transcriptionRecord) {
+        await prisma.transcription.update({
+          where: { id: transcriptionRecord.id },
+          data: { status: 'failed' }
+        });
+      }
+      
       // 处理不同类型的API错误
       if (apiError.message?.includes('timeout') || apiError.message?.includes('API请求超时')) {
         return NextResponse.json({ 
@@ -201,92 +366,119 @@ export async function POST(req: NextRequest) {
       }, { status: 500 });
     }
 
-    console.log('==== API响应处理 ====');
-    console.log('输出类型:', typeof output);
-    
-    // 处理输出格式
-    let segments = [];
-    let detectedLanguage = 'en';
-    
-    if ((output as any)?.segments && Array.isArray((output as any).segments)) {
-      console.log('✅ 检测到segments数组，长度:', (output as any).segments.length);
-      
-      const rawSegments = (output as any).segments;
-      
-      segments = rawSegments.map((seg: any, index: number) => ({
-        speaker: `Speaker ${(index % 3) + 1}`,
-        text: seg.text || '',
-        startTime: seg.start || seg.seek || 0,
-        id: seg.id || index,
-        seek: seg.start || seg.seek || 0,
-        end: seg.end || 0
-      })).filter((seg: any) => seg.text.trim().length > 0);
-      
-      if (segments.length > 0) {
-        const allText = segments.map((s: any) => s.text).join(' ');
-        console.log('过滤后的segments数量:', segments.length);
-        
-        // 简单的语言检测
-        const chineseChars = (allText.match(/[\u4e00-\u9fff]/g) || []).length;
-        const totalChars = allText.length;
-        const chineseRatio = totalChars > 0 ? chineseChars / totalChars : 0;
-        
-        detectedLanguage = chineseRatio > 0.3 ? 'zh' : 'en';
-        console.log('检测到的语言:', detectedLanguage);
-      } else {
-        console.log('⚠️ 警告：过滤后没有有效的segments');
-      }
-    } else {
-      console.log('❌ 未检测到segments数组，尝试其他格式...');
-      
-      // 尝试其他可能的格式
-      if (typeof output === 'string') {
-        segments = [{
-          speaker: 'Speaker 1',
-          text: output,
-          startTime: 0,
-          id: 0,
-          seek: 0,
-          end: 0
-        }];
-      } else if ((output as any)?.text) {
-        segments = [{
-          speaker: 'Speaker 1',
-          text: (output as any).text,
-          startTime: 0,
-          id: 0,
-          seek: 0,
-          end: 0
-        }];
-      }
-    }
+    console.log('==== API返回数据类型检查 ====');
+    console.log('output类型:', typeof output);
+    console.log('output是否为空:', !output);
+    console.log('output结构:', output);
 
-    if (segments.length === 0) {
-      console.log('❌ 错误：没有生成任何转录结果');
+    if (!output) {
+      console.error('❌ API返回空数据');
+      
+      if (transcriptionRecord) {
+        await prisma.transcription.update({
+          where: { id: transcriptionRecord.id },
+          data: { status: 'failed' }
+        });
+      }
+      
       return NextResponse.json({ 
-        error: '转录未产生任何结果',
-        suggestion: '请检查音频文件质量，确保包含可识别的语音内容'
-      }, { status: 422 });
+        error: '转录处理失败，未获得有效结果',
+        suggestion: '请检查音频文件质量或稍后重试'
+      }, { status: 500 });
     }
-    
-    console.log('==== 转录成功完成 ====');
-    console.log('segments数量:', segments.length);
-    console.log('最终语言:', detectedLanguage);
 
-    return NextResponse.json({ 
-      transcript: segments,
-      detectedLanguage: detectedLanguage
+    // 处理转录结果并保存到数据库
+    const segments = Array.isArray(output.segments) ? output.segments.map((segment: any, index: number) => {
+      // 为每个segment添加speaker字段
+      const speakerNumber = (index % 3) + 1; // 简单的说话人分配逻辑
+      return {
+        ...segment,
+        speaker: `Speaker ${speakerNumber}`,
+        startTime: segment.start || 0
+      };
+    }) : [];
+    const detectedLanguage = output.detected_language || language;
+    const totalDuration = segments.length > 0 ? segments[segments.length - 1].end : 0;
+
+    console.log('🔍 检查翻译需求:');
+    console.log('检测到的语言:', detectedLanguage);
+    console.log('期望输出语言:', outputLang);
+    console.log('是否需要翻译:', detectedLanguage !== outputLang);
+
+    // 标准化语言代码
+    const standardizeLanguageCode = (lang: string): string => {
+      const languageMapping: { [key: string]: string } = {
+        'chinese': 'zh',
+        'english': 'en',
+        'japanese': 'ja',
+        'korean': 'ko',
+        'spanish': 'es',
+        'french': 'fr',
+        'german': 'de',
+        'russian': 'ru',
+        'arabic': 'ar',
+        'hindi': 'hi',
+        'portuguese': 'pt',
+        'italian': 'it',
+        'thai': 'th',
+        'vietnamese': 'vi'
+      };
+      return languageMapping[lang.toLowerCase()] || lang;
+    };
+
+    const standardDetectedLang = standardizeLanguageCode(detectedLanguage);
+    const standardOutputLang = standardizeLanguageCode(outputLang);
+
+    console.log('🔄 标准化后的语言代码:');
+    console.log('检测语言:', `${detectedLanguage} -> ${standardDetectedLang}`);
+    console.log('输出语言:', `${outputLang} -> ${standardOutputLang}`);
+
+    // 原文转录始终保持检测到的原始语言，不进行翻译
+    // 翻译功能由前端TranscriptDisplay组件处理
+    let finalSegments = segments;
+    console.log('ℹ️ 保持原文转录的原始语言，翻译由前端处理');
+
+    // 更新转录记录
+    if (transcriptionRecord) {
+      try {
+        await prisma.transcription.update({
+          where: { id: transcriptionRecord.id },
+          data: {
+            status: 'completed',
+            transcript: JSON.stringify(finalSegments),
+            duration: totalDuration
+          }
+        });
+
+        // 记录使用量
+        await prisma.usageRecord.create({
+          data: {
+            userId: session.user.id,
+            type: 'transcription',
+            amount: totalDuration / 60 // 转换为分钟
+          }
+        });
+
+        console.log('✅ 转录记录更新成功');
+      } catch (updateError) {
+        console.error('❌ 更新转录记录失败:', updateError);
+      }
+    }
+
+    return NextResponse.json({
+      transcript: finalSegments,
+      detectedLanguage,
+      transcriptionId: transcriptionRecord?.id,
+      duration: totalDuration,
+      isLoggedIn: isLoggedIn
     });
-  } catch (e: any) {
-    console.error('❌ 转录处理错误:', e);
-    
-    // 确保返回JSON格式的错误响应
-    const errorMessage = e.message || '转录处理失败';
-    
+
+  } catch (error: any) {
+    console.error('❌ 转录处理失败:', error);
     return NextResponse.json({ 
-      error: errorMessage,
-      timestamp: new Date().toISOString(),
-      suggestion: '请检查音频文件格式和网络连接，然后重试'
+      error: '转录处理失败',
+      details: error.message,
+      timestamp: new Date().toISOString()
     }, { status: 500 });
   }
 } 

@@ -5,6 +5,7 @@ import { ThemeProvider } from '@/components/ui/theme-provider';
 import { LanguageProvider } from '@/lib/language-context';
 import { Header } from '@/components/layout/header';
 import { Footer } from '@/components/layout/footer';
+import { AuthSessionProvider } from '@/components/providers/session-provider';
 import Script from 'next/script';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -59,20 +60,22 @@ export default function RootLayout({
           strategy="afterInteractive"
         />
         
-        <ThemeProvider 
-          attribute="class" 
-          defaultTheme="system" 
-          enableSystem 
-          disableTransitionOnChange
-        >
-          <LanguageProvider>
-            <Header />
-            <main className="min-h-screen pt-24">
-              {children}
-            </main>
-            <Footer />
-          </LanguageProvider>
-        </ThemeProvider>
+        <AuthSessionProvider>
+          <ThemeProvider 
+            attribute="class" 
+            defaultTheme="system" 
+            enableSystem 
+            disableTransitionOnChange
+          >
+            <LanguageProvider>
+              <Header />
+              <main className="min-h-screen pt-24">
+                {children}
+              </main>
+              <Footer />
+            </LanguageProvider>
+          </ThemeProvider>
+        </AuthSessionProvider>
       </body>
     </html>
   );

@@ -72,7 +72,8 @@ export function TranscriptDisplay({
   const { language } = useLanguage();
 
   // 计算是否需要显示翻译 - 移到所有useEffect之前
-  const shouldShowTranslation = outputLang !== transcriptLang && outputLang !== 'auto';
+  // 修改逻辑：只要用户明确选择了输出语言（不是auto），就显示翻译按钮
+  const shouldShowTranslation = outputLang && outputLang !== 'auto';
 
   // 流式显示效果
   useEffect(() => {
@@ -149,7 +150,7 @@ export function TranscriptDisplay({
 
   // 翻译功能
   const translateContent = async () => {
-    if (translating || outputLang === transcriptLang) return;
+    if (translating) return;
     
     setTranslating(true);
     try {
@@ -237,6 +238,12 @@ export function TranscriptDisplay({
 
   const getSpeakerColor = (speaker: string) => {
     const colors = ['bg-blue-100 text-blue-800', 'bg-green-100 text-green-800', 'bg-purple-100 text-purple-800'];
+    
+    // 添加空值检查
+    if (!speaker || typeof speaker !== 'string') {
+      return colors[0]; // 返回默认颜色
+    }
+    
     const index = parseInt(speaker.replace('Speaker ', '')) - 1;
     return colors[index % colors.length];
   };
@@ -365,25 +372,25 @@ export function TranscriptDisplay({
               </div>
             </div>
 
-            <CardContent className="p-8">
-              {/* 三栏等宽等高布局 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[700px]">
+            <CardContent className="p-10">
+              {/* 三栏布局 - 更大更宽松 */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 h-[800px]">
                 
                 {/* 第一栏：原文转录 */}
                 <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 overflow-hidden h-full flex flex-col">
-                  <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-4 flex-shrink-0">
+                  <CardHeader className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-5 flex-shrink-0">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-white/20 rounded-lg">
-                        <Volume2 className="h-5 w-5" />
+                        <Volume2 className="h-6 w-6" />
                       </div>
                       <div>
-                        <CardTitle className="text-lg">原文转录</CardTitle>
+                        <CardTitle className="text-xl">原文转录</CardTitle>
                         <p className="text-white/80 text-sm">Original Transcription</p>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-4 flex-1 min-h-0">
-                    <div className="space-y-3 h-full overflow-y-auto">
+                  <CardContent className="p-5 flex-1 min-h-0">
+                    <div className="space-y-4 h-full overflow-y-auto">
                       <AnimatePresence>
                         {streamingSegments.map((segment, index) => (
                           <motion.div
@@ -391,11 +398,11 @@ export function TranscriptDisplay({
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.3, delay: index * 0.05 }}
-                            className="bg-white/80 dark:bg-slate-800/80 rounded-lg p-3 shadow-sm border border-blue-200/50 dark:border-blue-700/50"
+                            className="bg-white/80 dark:bg-slate-800/80 rounded-lg p-4 shadow-sm border border-blue-200/50 dark:border-blue-700/50"
                           >
                             <div className="flex items-start gap-3">
-                              <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                                <Badge className={`${getSpeakerColor(segment.speaker)} text-xs px-2 py-1`}>
+                              <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                                <Badge className={`${getSpeakerColor(segment.speaker)} text-sm px-3 py-1`}>
                                   {segment.speaker}
                                 </Badge>
                                 <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
@@ -403,7 +410,7 @@ export function TranscriptDisplay({
                                 </span>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
+                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-base">
                                   {segment.text}
                                 </p>
                               </div>
@@ -417,18 +424,18 @@ export function TranscriptDisplay({
 
                 {/* 第二栏：AI智能助手 */}
                 <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 overflow-hidden h-full">
-                  <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4">
+                  <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-500 text-white p-5">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-white/20 rounded-lg">
-                        <Brain className="h-5 w-5" />
+                        <Brain className="h-6 w-6" />
                       </div>
                       <div>
-                        <CardTitle className="text-lg">AI智能助手</CardTitle>
+                        <CardTitle className="text-xl">AI智能助手</CardTitle>
                         <p className="text-white/80 text-sm">AI Assistant</p>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-4 h-full overflow-hidden">
+                  <CardContent className="p-5 h-full overflow-hidden">
                     <div className="h-full">
                       <AiAssistantPanel transcript={streamingSegments} />
                     </div>
@@ -437,21 +444,21 @@ export function TranscriptDisplay({
 
                 {/* 第三栏：翻译结果 */}
                 <Card className="border-0 shadow-lg bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 overflow-hidden h-full flex flex-col">
-                  <CardHeader className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-4 flex-shrink-0">
+                  <CardHeader className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white p-5 flex-shrink-0">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-white/20 rounded-lg">
-                        <Languages className="h-5 w-5" />
+                        <Languages className="h-6 w-6" />
                       </div>
                       <div>
-                        <CardTitle className="text-lg">翻译结果</CardTitle>
+                        <CardTitle className="text-xl">翻译结果</CardTitle>
                         <p className="text-white/80 text-sm">Translation Results</p>
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-4 flex-1 min-h-0">
+                  <CardContent className="p-5 flex-1 min-h-0">
                     {shouldShowTranslation ? (
                       Object.keys(translatedContent).length > 0 ? (
-                        <div className="space-y-3 h-full overflow-y-auto">
+                        <div className="space-y-4 h-full overflow-y-auto">
                           <AnimatePresence>
                             {streamingSegments.map((segment, index) => {
                               const translatedText = translatedContent[segment.id || index];
@@ -463,11 +470,11 @@ export function TranscriptDisplay({
                                   initial={{ opacity: 0, x: 20 }}
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ duration: 0.3, delay: index * 0.05 }}
-                                  className="bg-white/80 dark:bg-slate-800/80 rounded-lg p-3 shadow-sm border border-emerald-200/50 dark:border-emerald-700/50"
+                                  className="bg-white/80 dark:bg-slate-800/80 rounded-lg p-4 shadow-sm border border-emerald-200/50 dark:border-emerald-700/50"
                                 >
                                   <div className="flex items-start gap-3">
-                                    <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                                      <Badge className={`${getSpeakerColor(segment.speaker)} text-xs px-2 py-1`}>
+                                    <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                                      <Badge className={`${getSpeakerColor(segment.speaker)} text-sm px-3 py-1`}>
                                         {segment.speaker}
                                       </Badge>
                                       <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
@@ -475,7 +482,7 @@ export function TranscriptDisplay({
                                       </span>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">
+                                      <p className="text-slate-700 dark:text-slate-300 leading-relaxed text-base">
                                         {translatedText}
                                       </p>
                                     </div>
@@ -506,7 +513,7 @@ export function TranscriptDisplay({
                           <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
                             {translating 
                               ? 'AI正在将内容翻译成目标语言，请稍候...' 
-                              : '选择不同的输出语言并点击翻译按钮开始'
+                              : '点击上方翻译按钮开始翻译'
                             }
                           </p>
                         </div>

@@ -242,11 +242,32 @@ function mergeTranscriptSegments(segmentResults: TranscriptSegment[][], segmentD
 }
 
 /**
+ * 获取未登录用户的使用次数 - 免费模式，不再限制
+ */
+function getGuestUsageCount(): number {
+  // 免费模式：返回0，不再跟踪使用次数
+  return 0;
+}
+
+/**
+ * 增加未登录用户的使用次数 - 免费模式，不再限制
+ */
+function incrementGuestUsageCount(): number {
+  // 免费模式：不再增加使用次数
+  return 0;
+}
+
+/**
  * 前端通过 API 路由调用服务端转录
  */
-export async function transcribeAudio(file: File, language: string): Promise<TranscriptionResult> {
+export async function transcribeAudio(file: File, language: string, outputLang?: string): Promise<TranscriptionResult> {
   try {
-    console.log('📝 执行直接转录（禁用自动分割）...');
+    console.log('📝 执行直接转录（免费模式）...');
+    console.log('🔤 输入语言:', language);
+    console.log('🌐 输出语言:', outputLang);
+    
+    // 免费模式：不再检查使用次数
+    console.log('🎉 免费模式：跳过使用次数检查');
     
     // 直接转录，不分割
     let lastError: Error | null = null;
@@ -259,6 +280,13 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
         const formData = new FormData();
         formData.append('file', file);
         formData.append('language', language);
+        // 添加输出语言参数
+        if (outputLang) {
+          formData.append('outputLang', outputLang);
+          console.log('📤 发送输出语言参数:', outputLang);
+        }
+        // 免费模式：不再发送使用次数
+        formData.append('guestUsageCount', '0');
 
         const res = await fetch('/api/transcribe', {
           method: 'POST',
@@ -270,12 +298,13 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
 
         if (!res.ok) {
           let errorMessage = `HTTP ${res.status}: ${res.statusText}`;
+          let errorData: any = {};
           
           // 安全地尝试解析错误响应
           try {
             const contentType = res.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
-              const errorData = await res.json();
+              errorData = await res.json();
               errorMessage = errorData.error || errorMessage;
             } else {
               const textError = await res.text();
@@ -305,6 +334,10 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
         }
 
         console.log('✅ 转录成功，segments数量:', data.transcript?.length || 0);
+        console.log('🌐 检测到的语言:', data.detectedLanguage);
+        
+        // 免费模式：不再更新使用次数
+        console.log('🎉 免费模式：无需更新使用次数');
         
         return {
           transcript: data.transcript || [],
@@ -346,4 +379,12 @@ export async function transcribeAudio(file: File, language: string): Promise<Tra
     
     throw new Error('转录过程中发生未知错误');
   }
+}
+
+/**
+ * 获取未登录用户剩余使用次数 - 免费模式，返回无限
+ */
+export function getGuestRemainingUsage(): { used: number; remaining: number; total: number } {
+  // 免费模式：返回无限使用
+  return { used: 0, remaining: 999999, total: 999999 };
 } 
